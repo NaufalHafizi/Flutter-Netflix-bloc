@@ -1,0 +1,272 @@
+# Flutter Clean Architecture with SOLID Principles & Bloc State Management
+
+## Project Architecture Overview
+This project follows Clean Architecture principles with clear separation of concerns across three main layers:
+- **Domain Layer**: Business logic, entities, and repository interfaces
+- **Data Layer**: Repository implementations, data sources, and models
+- **Presentation Layer**: UI components, Bloc/Cubit state management
+
+## Core Principles
+
+### SOLID Principles Enforcement
+
+#### Single Responsibility Principle (SRP)
+- Each class should have only one reason to change
+- Separate concerns: UI logic in widgets, business logic in use cases, data logic in repositories
+- Use cases should handle only one specific business operation
+- Blocs/Cubits should manage state for a single feature or screen
+
+#### Open/Closed Principle (OCP)
+- Use abstract classes and interfaces for extensibility
+- Repository pattern with interfaces in domain layer, implementations in data layer
+- Use case pattern with abstract UseCase base class
+- Extend functionality through inheritance, not modification
+
+#### Liskov Substitution Principle (LSP)
+- Implementations should be substitutable for their interfaces
+- Repository implementations must fully satisfy their domain contracts
+- State classes should properly extend their base abstract states
+
+#### Interface Segregation Principle (ISP)
+- Keep interfaces focused and minimal
+- Separate repository interfaces by feature (AuthRepository, MovieRepository, etc.)
+- Use specific parameter objects instead of large parameter lists
+
+#### Dependency Inversion Principle (DIP)
+- High-level modules should not depend on low-level modules
+- Use dependency injection (GetIt service locator)
+- Domain layer should not depend on data or presentation layers
+- Presentation layer depends on domain abstractions, not implementations
+
+## Project Structure Rules
+
+### Root Directory Structure
+```
+lib/
+├── main.dart                 # App entry point with BlocProvider setup
+├── service_locator.dart      # Dependency injection configuration
+├── core/                     # Shared utilities and configurations
+├── domain/                   # Business logic layer
+├── data/                     # Data access layer
+├── presentation/             # UI layer with Bloc state management
+└── common/                   # Shared components and utilities
+```
+
+### Core Layer (`lib/core/`)
+- **Purpose**: Shared utilities, configurations, and base classes
+- **Structure**:
+  ```
+  core/
+  ├── configs/
+  │   ├── theme/              # App theming
+  │   └── assets/             # Asset management
+  ├── constants/              # App-wide constants
+  ├── network/                # HTTP client configuration
+  ├── usecase/                # Base UseCase abstract class
+  ├── entity/                 # Base entity classes
+  └── models/                 # Base model classes
+  ```
+- **Rules**:
+  - Keep core utilities framework-agnostic
+  - No business logic in core layer
+  - Use abstract classes for extensible base functionality
+
+### Domain Layer (`lib/domain/`)
+- **Purpose**: Business logic, entities, and repository contracts
+- **Structure**:
+  ```
+  domain/
+  ├── auth/
+  │   ├── entities/           # Business entities (pure Dart classes)
+  │   ├── repositories/       # Repository interfaces
+  │   └── usecases/          # Business use cases
+  ├── movie/
+  └── tv/
+  ```
+- **Rules**:
+  - No external dependencies (no Flutter, HTTP, etc.)
+  - Entities should be pure Dart classes with business logic
+  - Repository interfaces define contracts, no implementations
+  - Use cases should extend base UseCase class
+  - Use Either<String, T> for error handling with dartz package
+  - Each use case should have a single responsibility
+
+### Data Layer (`lib/data/`)
+- **Purpose**: Data access, repository implementations, and external service integration
+- **Structure**:
+  ```
+  data/
+  ├── auth/
+  │   ├── models/            # Data transfer objects
+  │   ├── sources/           # API services and local storage
+  │   └── repositories/      # Repository implementations
+  ├── movie/
+  └── tv/
+  ```
+- **Rules**:
+  - Models should extend domain entities or provide conversion methods
+  - Repository implementations should implement domain repository interfaces
+  - API services should be registered as singletons in service locator
+  - Use Dio for HTTP requests with proper error handling
+  - Separate remote and local data sources
+
+### Presentation Layer (`lib/presentation/`)
+- **Purpose**: UI components and state management with Bloc pattern
+- **Structure**:
+  ```
+  presentation/
+  ├── auth/
+  │   ├── pages/             # Screen widgets
+  │   ├── widgets/           # Feature-specific reusable widgets
+  │   └── bloc/              # Bloc/Cubit state management
+  ├── home/
+  ├── search/
+  ├── splash/
+  └── watch/
+  ```
+- **Rules**:
+  - Each feature should have its own folder
+  - Use Bloc/Cubit for state management, not StatefulWidget for complex state
+  - Pages should be stateless and delegate to Bloc/Cubit
+  - Separate state classes for different states (Loading, Loaded, Error)
+  - Use BlocBuilder, BlocListener, and BlocConsumer appropriately
+
+## State Management with Bloc Pattern
+
+### Bloc/Cubit Implementation
+- Use Cubit for simple state management, Bloc for complex event handling
+- Follow naming convention: `FeatureCubit`, `FeatureState`
+- Inject use cases through service locator
+- Handle loading, success, and error states explicitly
+
+### State Classes
+```dart
+abstract class FeatureState {}
+
+class FeatureLoading extends FeatureState {}
+
+class FeatureLoaded extends FeatureState {
+  final DataType data;
+  FeatureLoaded({required this.data});
+}
+
+class FeatureError extends FeatureState {
+  final String message;
+  FeatureError({required this.message});
+}
+```
+
+### Cubit Implementation Pattern
+```dart
+class FeatureCubit extends Cubit<FeatureState> {
+  FeatureCubit() : super(FeatureLoading());
+
+  void performAction() async {
+    emit(FeatureLoading());
+    final result = await sl<UseCase>().call();
+    result.fold(
+      (error) => emit(FeatureError(message: error)),
+      (data) => emit(FeatureLoaded(data: data)),
+    );
+  }
+}
+```
+
+## Dependency Injection Rules
+
+### Service Locator Setup
+- Register all dependencies in `service_locator.dart`
+- Use singleton registration for stateless services
+- Register in order: Network → Services → Repositories → Use Cases
+- Use `sl<Type>()` for dependency resolution
+
+### Registration Pattern
+```dart
+void setupServiceLocator() {
+  // Network
+  sl.registerSingleton<DioClient>(DioClient());
+  
+  // Services
+  sl.registerSingleton<AuthService>(AuthApiServiceImpl());
+  
+  // Repositories
+  sl.registerSingleton<AuthRepository>(AuthRepositoryImpl());
+  
+  // Use Cases
+  sl.registerSingleton<SignupUseCase>(SignupUseCase());
+}
+```
+
+## Code Quality and Best Practices
+
+### Naming Conventions
+- Use descriptive names that reflect business domain
+- Classes: PascalCase (`UserRepository`, `SigninUseCase`)
+- Files: snake_case (`user_repository.dart`, `signin_usecase.dart`)
+- Folders: lowercase (`auth`, `movie`, `tv`)
+
+### Error Handling
+- Use Either<String, T> for use case returns
+- Provide meaningful error messages
+- Handle network errors, parsing errors, and business logic errors separately
+- Use try-catch blocks in repository implementations
+
+### Testing Structure
+- Mirror lib structure in test folder
+- Unit tests for use cases and repositories
+- Widget tests for UI components
+- Integration tests for complete user flows
+
+### Code Organization Rules
+1. **Import Order**: Dart core → Flutter → Third-party → Local imports
+2. **File Structure**: Imports → Constants → Class definition → Methods
+3. **Method Organization**: Public methods first, private methods last
+4. **Documentation**: Use /// for public APIs, // for implementation details
+
+## Feature Development Workflow
+
+### Adding a New Feature
+1. Create domain entities and repository interface
+2. Implement use cases extending base UseCase
+3. Create data models and repository implementation
+4. Register dependencies in service locator
+5. Implement Bloc/Cubit for state management
+6. Create UI pages and widgets
+7. Add to main app navigation
+
+### Modifying Existing Features
+1. Check if changes affect domain contracts
+2. Update use cases if business logic changes
+3. Modify repository implementations for data changes
+4. Update Bloc/Cubit state management if needed
+5. Adjust UI components as required
+
+## Performance and Optimization
+
+### State Management Optimization
+- Use BlocBuilder only for UI that needs to rebuild
+- Use BlocListener for side effects (navigation, snackbars)
+- Implement proper equals/hashCode for state classes
+- Avoid rebuilding entire widget trees
+
+### Memory Management
+- Dispose controllers and subscriptions properly
+- Use const constructors where possible
+- Optimize image loading and caching
+- Implement proper list view recycling for large datasets
+
+## Security Best Practices
+- Store sensitive data in secure storage (not SharedPreferences)
+- Validate all user inputs
+- Implement proper authentication token management
+- Use HTTPS for all network requests
+- Sanitize data before display
+
+## This rule ensures:
+- Clean separation of concerns following Clean Architecture
+- SOLID principles enforcement across all layers  
+- Consistent Bloc/Cubit state management patterns
+- Proper dependency injection and inversion of control
+- Scalable project structure that grows with the application
+- Type safety and error handling best practices
+- Performance optimization through proper state management
